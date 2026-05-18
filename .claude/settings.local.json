@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv\\\\Scripts\\\\python.exe -m pip install --upgrade pip)",
+      "PowerShell(.\\\\.venv\\\\Scripts\\\\python.exe -c \"from fast_flights import FlightData, Passengers, Result, get_flights; from datetime import date, timedelta; d = \\(date.today\\(\\)+timedelta\\(days=30\\)\\).isoformat\\(\\); print\\('Searching for', d\\); r = get_flights\\(flight_data=[FlightData\\(date=d, from_airport='MAD', to_airport='BCN'\\)], trip='one-way', seat='economy', passengers=Passengers\\(adults=1, children=0, infants_in_seat=0, infants_on_lap=0\\), fetch_mode='fallback'\\); print\\('current_price:', r.current_price\\); print\\('n_flights:', len\\(r.flights\\)\\); print\\('first:', r.flights[0] if r.flights else 'NONE'\\)\" 2>&1)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; .\\\\.venv\\\\Scripts\\\\python.exe _smoketest.py 2>&1 | Select-Object -Last 25)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "PowerShell($j = Get-Content \"C:\\\\Users\\\\garp8\\\\Documents\\\\Claude\\\\Projects\\\\FindCheapFlights\\\\.claude\\\\settings.local.json\" -Raw | ConvertFrom-Json; \"defaultMode: $\\($j.permissions.defaultMode\\)\"; \"allow entries: $\\($j.permissions.allow.Count\\)\")"
+    ]
+  }
+}

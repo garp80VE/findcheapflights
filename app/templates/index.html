@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FindCheapFlights — buscador de vuelos baratos</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header>
+  <h1>FindCheapFlights</h1>
+  <p class="subtitle">Vuelos baratos en Google Flights + costos ocultos + arbitraje por país + fechas flexibles.</p>
+</header>
+
+<main>
+
+<form id="search-form" autocomplete="off">
+  <div class="row">
+    <label>País de origen
+      <select class="ap-country" data-target="origin"><option value="">Cargando países…</option></select></label>
+    <label>Ciudad / Aeropuerto de origen
+      <select class="ap-city" data-target="origin" disabled><option value="">Primero elige país</option></select>
+      <input type="hidden" name="origin" required /></label>
+  </div>
+
+  <div class="row">
+    <label>País de destino
+      <select class="ap-country" data-target="destination"><option value="">Cargando países…</option></select></label>
+    <label>Ciudad / Aeropuerto de destino
+      <select class="ap-city" data-target="destination" disabled><option value="">Primero elige país</option></select>
+      <input type="hidden" name="destination" required /></label>
+  </div>
+
+  <div class="row">
+    <label>Fecha ida<input type="date" name="depart_date" required /></label>
+    <label>Fecha vuelta<input type="date" name="return_date" /></label>
+  </div>
+
+  <div class="row">
+    <label>Adultos<input type="number" name="adults" min="1" max="9" value="1" /></label>
+    <label>Niños (2-11)<input type="number" name="children" min="0" max="9" value="0" /></label>
+    <label>Bebés (&lt;2)<input type="number" name="infants" min="0" max="9" value="0" /></label>
+    <label>Adultos mayores<input type="number" name="seniors" min="0" max="9" value="0" /></label>
+  </div>
+
+  <div class="row">
+    <label>Maletas facturadas (por pax)
+      <input type="number" name="checked_bags" min="0" max="4" value="1" />
+      <small>se autoajusta a los adultos; edítalo y deja de seguir</small></label>
+    <label>Asiento elegido
+      <select name="pick_seat"><option value="false">No</option><option value="true">Sí</option></select></label>
+    <label>Máx. escalas
+      <select name="max_stops">
+        <option value="">cualquiera</option>
+        <option value="0">directo</option>
+        <option value="1">1 escala</option>
+        <option value="2">2 escalas</option>
+      </select></label>
+  </div>
+
+  <div class="row">
+    <label>Flex ± días
+      <input type="number" name="flex_days" min="0" max="30" value="3" />
+      <small>mueve ida Y vuelta ±N días manteniendo la duración del viaje (0-30, mucho flex = lento)</small></label>
+    <label>Arbitraje por país
+      <select name="probe_pos"><option value="true">Sí (recomendado)</option><option value="false">No</option></select>
+      <small>consulta otros mercados (UK, MX, IN…) por si el precio baja</small></label>
+  </div>
+
+  <fieldset class="hunter-mode">
+    <legend>🎯 Modo cazador</legend>
+    <label class="checkbox"><input type="checkbox" name="composite" checked />
+      Aeropuertos cercanos compuestos
+      <small>busca también en hubs ±400 km de origen/destino y combinaciones</small></label>
+    <label class="checkbox"><input type="checkbox" name="hidden_city" checked />
+      Hidden-city candidates (skiplagging)
+      <small>busca rutas que escalan en tu destino — A→C con stopover en B</small></label>
+    <label class="checkbox"><input type="checkbox" name="use_amadeus" checked />
+      Cruzar con Amadeus API
+      <small>segunda fuente B2B (requiere AMADEUS_CLIENT_ID/SECRET en env)</small></label>
+    <label class="checkbox"><input type="checkbox" name="weekday_analysis" checked />
+      Análisis por día de la semana
+      <small>sondea 7 días consecutivos para ver qué weekday es más barato volar</small></label>
+    <label class="checkbox"><input type="checkbox" name="self_transfer" checked />
+      Self-transfer (interlining virtual)
+      <small>combina 2 tickets separados vía hub — abre rutas sin billete único (estilo Kiwi)</small></label>
+  </fieldset>
+
+  <button type="submit" id="go">Buscar vuelos</button>
+  <p id="status"></p>
+</form>
+
+<section id="results" hidden>
+
+  <div id="summary"></div>
+  <div id="recommendations"></div>
+  <div id="notes"></div>
+  <div id="track-row" hidden>
+    <button type="button" id="track-btn">📩 Trackear esta ruta y avisarme por email</button>
+  </div>
+
+  <h2>Vuelos encontrados <span class="muted" id="count"></span></h2>
+  <div id="flights"></div>
+
+  <h2>Arbitraje por mercado (punto de venta)</h2>
+  <p class="muted">Mismo vuelo, distinto mercado/divisa. El precio más bajo está marcado. <strong>Ojo</strong>: algunas aerolíneas anulan tickets comprados desde un país distinto al de origen real — verifica T&amp;Cs.</p>
+  <div id="arbitrage"></div>
+
+  <h2>Calendario flexible</h2>
+  <div id="flex"></div>
+
+  <div id="composite-block" hidden>
+    <h2>🎯 Aeropuertos compuestos cercanos <span class="muted" id="composite-count"></span></h2>
+    <p class="muted">Combinaciones de aeropuertos cercanos a tu origen/destino que salen <strong>más barato</strong> que el primary. Costo: tienes que llegar al aeropuerto alternativo por tu cuenta (compara con bus/tren/parking).</p>
+    <div id="composite"></div>
+  </div>
+
+  <div id="hidden-city-block" hidden>
+    <h2>🎯 Hidden-city candidates <span class="muted" id="hc-count"></span></h2>
+    <p class="muted"><strong>⚠ Skiplagging</strong>: comprar un ticket que escala en tu destino real y bajarse en la escala. Riesgo: <em>algunas aerolíneas anulan tu vuelta o banean la cuenta</em> si lo detectan. <strong>Verifica</strong> en la página de la aerolínea que el vuelo realmente para en tu destino antes de comprar. Solo válido para ida (la vuelta se invalida al no presentarte). Sin maletas facturadas.</p>
+    <div id="hidden-city"></div>
+  </div>
+
+  <div id="amadeus-block" hidden>
+    <h2>Amadeus (segunda fuente) <span class="muted" id="ama-count"></span></h2>
+    <p class="muted">Resultados oficiales B2B de Amadeus — a veces difieren de los retail de Google.</p>
+    <div id="amadeus"></div>
+  </div>
+
+  <div id="weekday-block" hidden>
+    <h2>📅 Precios por día de la semana</h2>
+    <p class="muted" id="weekday-note"></p>
+    <div id="weekday-chart"></div>
+  </div>
+
+  <div id="selftransfer-block" hidden>
+    <h2>🔗 Self-transfer (interlining virtual) <span class="muted" id="st-count"></span></h2>
+    <p class="muted"><strong>⚠ Tickets separados, sin protección de conexión.</strong> Si la primera pierna se retrasa o cancela, pierdes la segunda y la aerolínea NO te reubica ni reembolsa. Úsalo con escala holgada (idealmente noche de por medio) y equipaje de mano. Es lo que vende Kiwi.com como "self-transfer".</p>
+    <div id="selftransfer"></div>
+  </div>
+
+  <div id="offgds-block" hidden>
+    <h2>✈ Aerolíneas fuera de Google Flights <span class="muted" id="offgds-count"></span></h2>
+    <p class="muted">Estas aerolíneas <strong>no aparecen en ningún agregador</strong> (sanciones, low-cost puro, o regional). No puedo traer sus precios automáticamente — abre el link y revisa la ruta directo en su web.</p>
+    <div id="offgds"></div>
+  </div>
+
+</section>
+
+<section id="deals-section">
+  <h2>🎁 Ofertas y mistake fares activos <span class="muted" id="deals-count"></span></h2>
+  <p class="muted">Tarifas-error y promos publicadas en las últimas horas (Secret Flying, The Flight Deal). Se refrescan cada 30 min. Click en una para ver detalles.</p>
+  <div id="deals-list">Cargando…</div>
+</section>
+
+<section id="tracks-section">
+  <h2>Mis alertas de precio <span class="muted" id="tracks-count"></span></h2>
+  <p class="muted" id="tracks-help"></p>
+  <div id="tracks-list"></div>
+</section>
+
+</main>
+
+<footer>
+  <small>Datos vía Google Flights · fees estimadas (data/fees.json) · tasas ECB (frankfurter.app) · prototipo educativo</small>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

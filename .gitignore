@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+_*.py
+_*.html
+.env
+data/tracks.db
+data/tracks.db-journal
