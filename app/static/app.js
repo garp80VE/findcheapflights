@@ -407,7 +407,13 @@ function stopsLabel(s) {
   return `<span class="stops-pill">${s} escala${s > 1 ? "s" : ""}</span>`;
 }
 
-function flightCard(f) {
+function flightCard(f, ctx) {
+  ctx = ctx || {};
+  const isRT = !!ctx.return_date;
+  const tripBadge = isRT
+    ? `<span class="trip-pill rt">Ida y vuelta</span>`
+    : `<span class="trip-pill ow">Solo ida</span>`;
+  const priceLabel = isRT ? "total ida+vuelta" : "total";
   const links = [];
   if (f.booking_links.airline_direct)
     links.push(`<a class="primary" href="${f.booking_links.airline_direct}" target="_blank" rel="noopener">Comprar en aerolínea</a>`);
@@ -419,15 +425,21 @@ function flightCard(f) {
     ? `<div class="extras-detail">${f.extras_breakdown.map(b => `${b.label}: $${b.amount}`).join(" + ")}</div>`
     : `<div class="extras-detail">sin extras estimados</div>`;
 
+  const legNote = isRT
+    ? `<div class="muted leg-note">Vuelo de IDA mostrado · regreso ${ctx.return_date} se elige al comprar</div>`
+    : "";
+
   return `<div class="flight ${f.is_best ? "best" : ""}">
     <div>
       <div class="airline">${f.airline}</div>
+      ${tripBadge}
       ${stopsLabel(f.stops)}
       ${f.plus_days ? `<span class="stops-pill">+${f.plus_days} día${f.plus_days > 1 ? "s" : ""}</span>` : ""}
     </div>
     <div class="times">
       <div>${f.departure}</div>
       <div class="muted">→ ${f.arrival}</div>
+      ${legNote}
     </div>
     <div class="duration">
       <div>${f.duration}</div>
@@ -435,7 +447,7 @@ function flightCard(f) {
     </div>
     <div class="price">
       <div class="total">${fmtMoney(f.total_usd)}</div>
-      <div class="base">base ${fmtMoney(f.base_price_usd)} (${f.raw_price})</div>
+      <div class="base">${priceLabel}: base ${fmtMoney(f.base_price_usd)} (${f.raw_price})</div>
       <div class="extras">+ extras ${fmtMoney(f.extras_usd)}</div>
       ${extras}
     </div>
@@ -667,7 +679,9 @@ function render(data, payload) {
     .join("");
 
   countEl.textContent = `· ${data.flights.length}`;
-  flightsEl.innerHTML = data.flights.slice(0, 50).map(flightCard).join("");
+  const tripCtx = { return_date: data.return_date };
+  flightsEl.innerHTML = data.flights.slice(0, 50)
+    .map(f => flightCard(f, tripCtx)).join("");
 
   const cheapestPos = data.cheapest_pos;
   arbitrageEl.innerHTML = data.arbitrage.length
