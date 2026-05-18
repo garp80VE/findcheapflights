@@ -374,7 +374,9 @@ h2 { margin-top: 24px; font-size: 16px; border-bottom: 1px solid var(--border); 
 }
 .st-row .st-route { font-size: 14px; grid-column: 1; }
 .st-row .st-route .muted { font-weight: normal; margin-left: 6px; }
-.st-row .st-legs { font-size: 12px; grid-column: 1; }
+.st-row .st-half { grid-column: 1; margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--border); }
+.st-row .st-half-h { font-size: 12px; font-weight: 600; color: var(--accent2); }
+.st-row .st-legs { font-size: 12px; grid-column: 1; margin: 2px 0; }
 .st-row .st-links { grid-column: 1; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .st-row .st-links a {
   font-size: 12px; color: var(--accent); text-decoration: none;
@@ -384,7 +386,17 @@ h2 { margin-top: 24px; font-size: 16px; border-bottom: 1px solid var(--border); 
 .st-row .st-links a:hover { background: var(--accent); color: #001; }
 .st-row .st-total {
   font-size: 18px; font-weight: 700; color: var(--accent);
-  grid-column: 2; grid-row: 1 / span 3; align-self: center;
+  grid-column: 2; grid-row: 1 / span 4; align-self: center; text-align: right;
+}
+.st-row .st-total small { display: block; font-size: 10px; color: var(--muted); font-weight: normal; }
+.st-half-h { font-size: 13px; font-weight: 700; color: var(--accent2); margin: 8px 0 4px; }
+.st-combined {
+  background: rgba(76, 201, 240, 0.12); border: 1px solid var(--accent);
+  border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px;
+}
+.st-warn {
+  background: rgba(244, 162, 97, 0.12); border-left: 3px solid var(--accent2);
+  padding: 8px 12px; margin: 6px 0; font-size: 12px; border-radius: 0 4px 4px 0;
 }
 .nf-st { margin-top: 6px; }
 

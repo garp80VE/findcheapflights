@@ -227,39 +227,71 @@ function gfFallback(legCode, dateStr) {
   return "https://www.google.com/travel/flights?q=" + encodeURIComponent(q);
 }
 
-function selfTransferRows(items) {
-  return items.map(s => {
-    const l1 = (s.leg1_link && s.leg1_link !== "undefined")
-      ? s.leg1_link : gfFallback(s.leg1, s.leg1_date);
-    const l2 = (s.leg2_link && s.leg2_link !== "undefined")
-      ? s.leg2_link : gfFallback(s.leg2, s.leg2_date);
-    return `
-    <div class="st-row">
-      <div class="st-route">
-        <strong>${s.leg1}</strong> + <strong>${s.leg2}</strong>
-        <span class="muted">vía ${s.hub_city} (${s.hub})</span>
-      </div>
-      <div class="st-legs muted">
-        Pierna 1 ${fmtMoney(s.leg1_usd)}${s.leg1_date ? ` (${s.leg1_date})` : ""} ·
-        Pierna 2 ${fmtMoney(s.leg2_usd)}${s.leg2_date ? ` (${s.leg2_date})` : ""}${s.leg2_when ? `, ${s.leg2_when}` : ""}
-      </div>
-      <div class="st-links">
-        <a href="${l1}" target="_blank" rel="noopener">① Ver/comprar ${s.leg1} →</a>
-        <a href="${l2}" target="_blank" rel="noopener">② Ver/comprar ${s.leg2} →</a>
-      </div>
-      <div class="st-total">${fmtMoney(s.total_usd)}</div>
-    </div>`;
-  }).join("");
+function stLeg(code, link, dateStr) {
+  const href = (link && link !== "undefined") ? link : gfFallback(code, dateStr);
+  return `<a href="${href}" target="_blank" rel="noopener">${code} (${dateStr || "?"}) →</a>`;
 }
 
-function renderSelfTransfer(items) {
+function stOptionRow(o) {
+  return `
+    <div class="st-row">
+      <div class="st-route">
+        <strong>vía ${o.hub_city} (${o.hub})</strong>
+        <span class="muted">2 tickets separados</span>
+      </div>
+      <div class="st-legs muted">
+        ${o.leg1} ${fmtMoney(o.leg1_usd)} (${o.leg1_date}) +
+        ${o.leg2} ${fmtMoney(o.leg2_usd)} (${o.leg2_date}, ${o.leg2_when})
+      </div>
+      <div class="st-links">
+        ${stLeg(o.leg1, o.leg1_link, o.leg1_date)}
+        ${stLeg(o.leg2, o.leg2_link, o.leg2_date)}
+      </div>
+      <div class="st-total">${fmtMoney(o.total_usd)}</div>
+    </div>`;
+}
+
+// st is the dict { is_round_trip, outbound[], return[], best_combined_usd }.
+// Accepts a legacy array too (older server) and treats it as outbound-only.
+function selfTransferRows(st) {
+  if (Array.isArray(st)) st = { is_round_trip: false, outbound: st, return: [] };
+  if (!st || (!st.outbound || !st.outbound.length) && (!st["return"] || !st["return"].length)) {
+    return `<p class="muted">No se encontraron opciones de self-transfer (posible bloqueo temporal de Google o ruta sin hub viable).</p>`;
+  }
+  const out = st.outbound || [];
+  const ret = st["return"] || [];
+  let html = "";
+  if (st.best_combined_usd != null) {
+    html += `<div class="st-combined">Mejor combinación ida+vuelta self-transfer: <strong>${fmtMoney(st.best_combined_usd)}</strong> total (${ret.length ? "ida + vuelta, 4 tickets" : "solo ida, 2 tickets"})</div>`;
+  }
+  if (out.length) {
+    html += `<div class="st-half-h">✈ IDA — ${out[0].leg1_date}</div>`;
+    html += out.map(stOptionRow).join("");
+  }
+  if (st.is_round_trip) {
+    if (ret.length) {
+      html += `<div class="st-half-h" style="margin-top:10px">✈ VUELTA (${ret[0].leg1_date})</div>`;
+      html += ret.map(stOptionRow).join("");
+    } else {
+      html += `<div class="st-warn">⚠ No se encontró self-transfer para la VUELTA en esta fecha (Google pudo bloquear, o no hay hub viable). Revisa la vuelta aparte o usa otra fecha.</div>`;
+    }
+  }
+  return html;
+}
+
+function renderSelfTransfer(st) {
   const block = document.getElementById("selftransfer-block");
   const el = document.getElementById("selftransfer");
   const cnt = document.getElementById("st-count");
-  if (!items.length) { block.hidden = true; return; }
+  if (!block) return;
+  const hasAny = st && ((st.outbound && st.outbound.length) ||
+                        (st["return"] && st["return"].length));
+  if (!hasAny) { block.hidden = true; return; }
   block.hidden = false;
-  cnt.textContent = `· ${items.length}`;
-  el.innerHTML = selfTransferRows(items);
+  const n = (st.outbound ? st.outbound.length : 0) +
+            (st["return"] ? st["return"].length : 0);
+  cnt.textContent = `· ${n}`;
+  el.innerHTML = selfTransferRows(st);
 }
 
 function offGdsRows(items) {
@@ -607,10 +639,13 @@ function renderNoFlights(detail, payload) {
     html += `</div>`;
   }
 
-  const st = detail.self_transfer || [];
-  if (st.length) {
+  const st = detail.self_transfer;
+  const stHasAny = st && ((st.outbound && st.outbound.length) ||
+                          (st["return"] && st["return"].length) ||
+                          (Array.isArray(st) && st.length));
+  if (stHasAny) {
     html += `<div class="nf-sub" style="margin-top:14px">
-      🔗 <strong>Self-transfer</strong> (2 tickets separados vía hub — barato pero
+      🔗 <strong>Self-transfer</strong> (tickets separados vía hub — barato pero
       sin protección de conexión, usa escala holgada):</div>
       <div class="nf-st">${selfTransferRows(st)}</div>`;
   }

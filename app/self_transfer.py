@@ -39,12 +39,16 @@ _GLOBAL_GATEWAYS = [
 
 
 def _hub_candidates(origin: str, destination: str) -> list[str]:
-    """Hubs to try as the connecting point: airports near the origin (so the
-    first leg is a short hop) plus global gateways. De-duplicated, excludes
-    origin/destination themselves."""
+    """Hubs to try as the connecting point. Real global gateways FIRST (these
+    actually have intercontinental service) then airports geographically near
+    the origin. De-duplicated, excludes origin/destination themselves.
+
+    Putting gateways first matters: small origins (e.g. VLC) have only GA
+    airfields nearby with zero commercial service — those would otherwise eat
+    the probe budget and return nothing."""
     near = [a["iata"] for a in nearest(origin, n=4, max_km=700)]
     seen, out = set(), []
-    for code in near + _GLOBAL_GATEWAYS:
+    for code in _GLOBAL_GATEWAYS + near:
         if code in (origin, destination) or code in seen:
             continue
         seen.add(code)
@@ -52,81 +56,107 @@ def _hub_candidates(origin: str, destination: str) -> list[str]:
     return out[:14]  # bound the probe budget
 
 
-def find_self_transfer(*, origin: str, destination: str, depart_date: str,
-                       return_date: Optional[str], adults: int, children: int,
-                       infants: int, max_stops: Optional[int] = None,
-                       max_results: int = 5) -> list[dict]:
-    """Return self-transfer itineraries sorted by total one-way price.
+def _best_through_hub(a_to_hub: Optional[float],
+                       hub_to_b_same: Optional[float],
+                       hub_to_b_next: Optional[float],
+                       d1: str, d_next: str):
+    """Given leg1 (A->hub on d1) and leg2 (hub->B same/next day) prices,
+    return (leg1_price, leg2_price, leg2_date, when) or None if incomplete."""
+    if a_to_hub is None:
+        return None
+    opts = []
+    if hub_to_b_same is not None:
+        opts.append(("mismo día", hub_to_b_same, d1))
+    if hub_to_b_next is not None:
+        opts.append(("día siguiente (escala nocturna)", hub_to_b_next, d_next))
+    if not opts:
+        return None
+    when, leg2_price, leg2_date = min(opts, key=lambda x: x[1])
+    return a_to_hub, leg2_price, leg2_date, when
 
-    Each: {hub, hub_city, leg1_usd, leg2_usd, leg2_when, total_usd}.
-    Round-trip is intentionally probed one-way only — self-transfer return
-    tickets compound the missed-connection risk; we surface the outbound and
-    let the user mirror it manually for the return.
+
+def _journey_options(a: str, b: str, d: str, adults: int, children: int,
+                     infants: int, max_stops: Optional[int],
+                     max_results: int) -> list[dict]:
+    """Self-transfer options for a single A->B journey on date d.
+
+    Each option = A->hub (leg1, day d) + hub->B (leg2, day d or d+1). Returns
+    independent options sorted by total. Hubs are gateways near A's region.
     """
-    hubs = _hub_candidates(origin, destination)
+    hubs = _hub_candidates(a, b)
     if not hubs:
         return []
-
-    base_dep = date.fromisoformat(depart_date)
-    next_day = (base_dep + timedelta(days=1)).isoformat()
-
-    # Probe leg 1 (origin->hub, depart day) and leg 2 (hub->dest, depart day
-    # AND next day) for every hub, all in parallel.
+    d_next = (date.fromisoformat(d) + timedelta(days=1)).isoformat()
+    res: dict[str, dict[str, Optional[float]]] = {h: {} for h in hubs}
     jobs = {}
     with ThreadPoolExecutor(max_workers=12) as ex:
         for hub in hubs:
-            jobs[ex.submit(cheapest_for, origin, hub, depart_date, None,
-                           adults, children, infants, max_stops)] = ("L1", hub)
-            jobs[ex.submit(cheapest_for, hub, destination, depart_date, None,
-                           adults, children, infants, max_stops)] = ("L2same", hub)
-            jobs[ex.submit(cheapest_for, hub, destination, next_day, None,
-                           adults, children, infants, max_stops)] = ("L2next", hub)
-
-        leg1: dict[str, float] = {}
-        leg2_same: dict[str, float] = {}
-        leg2_next: dict[str, float] = {}
+            jobs[ex.submit(cheapest_for, a, hub, d, None,
+                           adults, children, infants, max_stops)] = (hub, "l1")
+            jobs[ex.submit(cheapest_for, hub, b, d, None,
+                           adults, children, infants, max_stops)] = (hub, "l2s")
+            jobs[ex.submit(cheapest_for, hub, b, d_next, None,
+                           adults, children, infants, max_stops)] = (hub, "l2n")
         for fut in as_completed(jobs):
-            kind, hub = jobs[fut]
-            price = fut.result()
-            if price is None:
-                continue
-            if kind == "L1":
-                leg1[hub] = price
-            elif kind == "L2same":
-                leg2_same[hub] = price
-            else:
-                leg2_next[hub] = price
+            hub, key = jobs[fut]
+            res[hub][key] = fut.result()
 
     out = []
     for hub in hubs:
-        if hub not in leg1:
+        r = res[hub]
+        best = _best_through_hub(r.get("l1"), r.get("l2s"), r.get("l2n"),
+                                 d, d_next)
+        if best is None:
             continue
-        opts = []
-        if hub in leg2_same:
-            opts.append(("mismo día", leg2_same[hub]))
-        if hub in leg2_next:
-            opts.append(("día siguiente (escala nocturna)", leg2_next[hub]))
-        if not opts:
-            continue
-        when, leg2_price = min(opts, key=lambda x: x[1])
-        leg2_date = depart_date if when == "mismo día" else next_day
-        a = airport_lookup(hub)
+        l1_p, l2_p, l2_date, l2_when = best
+        ap = airport_lookup(hub)
         out.append({
             "hub": hub,
-            "hub_city": a[1] if a else hub,
-            "hub_country": a[2] if a else "",
-            "leg1": f"{origin}-{hub}",
-            "leg1_usd": round(leg1[hub], 2),
-            "leg1_date": depart_date,
+            "hub_city": ap[1] if ap else hub,
+            "hub_country": ap[2] if ap else "",
+            "leg1": f"{a}-{hub}", "leg1_usd": round(l1_p, 2),
+            "leg1_date": d,
             "leg1_link": google_flights_market_url(
-                origin, hub, depart_date, None, adults, children, infants),
-            "leg2": f"{hub}-{destination}",
-            "leg2_usd": round(leg2_price, 2),
-            "leg2_date": leg2_date,
-            "leg2_when": when,
+                a, hub, d, None, adults, children, infants),
+            "leg2": f"{hub}-{b}", "leg2_usd": round(l2_p, 2),
+            "leg2_date": l2_date, "leg2_when": l2_when,
             "leg2_link": google_flights_market_url(
-                hub, destination, leg2_date, None, adults, children, infants),
-            "total_usd": round(leg1[hub] + leg2_price, 2),
+                hub, b, l2_date, None, adults, children, infants),
+            "total_usd": round(l1_p + l2_p, 2),
         })
     out.sort(key=lambda x: x["total_usd"])
     return out[:max_results]
+
+
+def find_self_transfer(*, origin: str, destination: str, depart_date: str,
+                       return_date: Optional[str], adults: int, children: int,
+                       infants: int, max_stops: Optional[int] = None,
+                       max_results: int = 4) -> dict:
+    """Self-transfer for the requested trip.
+
+    Returns {is_round_trip, outbound[], return[], best_combined_usd}.
+
+    outbound = self-transfer options for origin->destination on depart_date.
+    return   = self-transfer options for destination->origin on return_date
+               (only when a return date is given). Outbound and return are
+               INDEPENDENT journeys (days apart) and may route through
+               different hubs — we don't force the same one. best_combined_usd
+               is cheapest outbound + cheapest return when both exist.
+    """
+    is_rt = bool(return_date)
+    outbound = _journey_options(origin, destination, depart_date, adults,
+                                children, infants, max_stops, max_results)
+    ret: list[dict] = []
+    if is_rt:
+        ret = _journey_options(destination, origin, return_date, adults,
+                               children, infants, max_stops, max_results)
+    best_combined = None
+    if outbound and (ret or not is_rt):
+        best_combined = round(
+            outbound[0]["total_usd"] + (ret[0]["total_usd"] if ret else 0), 2)
+    return {
+        "is_round_trip": is_rt,
+        "outbound": outbound,
+        "return": ret,
+        "best_combined_usd": best_combined,
+    }
