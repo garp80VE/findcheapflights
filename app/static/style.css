@@ -408,6 +408,31 @@ h2 { margin-top: 24px; font-size: 16px; border-bottom: 1px solid var(--border); 
 .offgds-row .og-note { font-size: 12px; color: var(--muted); margin: 3px 0; }
 .offgds-row .og-cta { font-size: 11px; color: var(--accent); }
 
+/* Split vs block comparison */
+#split-block { margin: 12px 0; }
+#split-block h2 { margin-top: 0; }
+.sb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.sb-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+.sb-card.sb-win { border-color: var(--good); background: rgba(103, 211, 145, 0.08); }
+.sb-card .sb-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.sb-card .sb-price { font-size: 24px; font-weight: 700; color: var(--accent); }
+.sb-card.sb-win .sb-price { color: var(--good); }
+.sb-card .sb-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.sb-badge {
+  display: inline-block; background: var(--good); color: #001;
+  padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 700;
+}
+.sb-verdict {
+  background: var(--panel2); border-radius: 6px; padding: 10px 12px;
+  font-size: 13px;
+}
+@media (max-width: 760px) { .sb-grid { grid-template-columns: 1fr; } }
+
 /* Deals feed */
 #deals-section { margin-top: 32px; padding-top: 8px; border-top: 1px solid var(--border); }
 .deal-row {

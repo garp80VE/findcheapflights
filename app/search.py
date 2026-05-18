@@ -91,6 +91,7 @@ class SearchResult:
     notes: List[str] = field(default_factory=list)
     rerun_pos: Optional[str] = None             # if not None, flights are from this market
     rerun_savings_usd: Optional[float] = None   # vs the originally-displayed cheapest
+    split_vs_block: Optional[dict] = None        # round-trip block vs 2 one-ways
 
     def to_dict(self):
         return {
@@ -109,6 +110,7 @@ class SearchResult:
             "notes": self.notes,
             "rerun_pos": self.rerun_pos,
             "rerun_savings_usd": self.rerun_savings_usd,
+            "split_vs_block": self.split_vs_block,
         }
 
 
@@ -478,6 +480,50 @@ def search(*, origin: str, destination: str, depart_date: str,
                         f"${cheapest['total_usd']:.2f} (vs ${flights[0].total_usd:.2f})."
                     )
 
+    # Split vs block: is it cheaper to buy the round-trip as ONE combined
+    # ticket (block) or as TWO independent one-ways (ida suelta + vuelta
+    # suelta, possibly different airlines)? Compared on base fare — separate
+    # tickets each charge their own bags/seat, noted to the user.
+    split_vs_block = None
+    if return_date and flights:
+        block_base = flights[0].base_price_usd
+        block_airline = flights[0].airline
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_out = ex.submit(cheapest_for, origin, destination, depart_date,
+                              None, adults, children, infants, max_stops)
+            f_ret = ex.submit(cheapest_for, destination, origin, return_date,
+                              None, adults, children, infants, max_stops)
+            out_p = f_out.result()
+            ret_p = f_ret.result()
+        if out_p is not None and ret_p is not None:
+            split_total = round(out_p + ret_p, 2)
+            cheaper = "split" if split_total < block_base else "block"
+            savings = round(abs(block_base - split_total), 2)
+            split_vs_block = {
+                "block_base_usd": round(block_base, 2),
+                "block_airline": block_airline,
+                "split_out_usd": round(out_p, 2),
+                "split_return_usd": round(ret_p, 2),
+                "split_total_usd": split_total,
+                "cheaper": cheaper,
+                "savings_usd": savings,
+            }
+            if cheaper == "split" and savings >= 1:
+                notes.append(
+                    f"💡 Comprar por tramos separados (ida ${out_p:.0f} + "
+                    f"vuelta ${ret_p:.0f} = ${split_total:.0f}) es "
+                    f"${savings:.2f} más barato que el billete ida-y-vuelta "
+                    f"combinado (${block_base:.0f}). Ojo: son 2 reservas "
+                    f"independientes, el equipaje se cobra aparte en cada una."
+                )
+            elif cheaper == "block":
+                notes.append(
+                    f"💡 El billete ida-y-vuelta combinado "
+                    f"(${block_base:.0f}, {block_airline}) es ${savings:.2f} "
+                    f"más barato que comprar los tramos por separado "
+                    f"(${split_total:.0f}). Cómpralo como bloque único."
+                )
+
     return SearchResult(
         origin=origin, destination=destination,
         depart_date=depart_date, return_date=return_date,
@@ -487,4 +533,5 @@ def search(*, origin: str, destination: str, depart_date: str,
         cheapest_pos_savings_usd=cheapest_pos_savings,
         flex_calendar=flex_calendar, notes=notes,
         rerun_pos=rerun_pos, rerun_savings_usd=rerun_savings,
+        split_vs_block=split_vs_block,
     )

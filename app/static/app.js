@@ -646,6 +646,35 @@ function renderNoFlights(detail, payload) {
   });
 }
 
+function renderSplitVsBlock(sb) {
+  const el = document.getElementById("split-block");
+  if (!el) return;
+  if (!sb) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const blockWin = sb.cheaper === "block";
+  const splitWin = sb.cheaper === "split";
+  el.innerHTML = `
+    <h2>🧮 ¿Comprar el bloque o por tramos?</h2>
+    <p class="muted">Comparación sobre tarifa base (sin extras). Tramos separados = 2 reservas; cada aerolínea cobra su propio equipaje/asiento.</p>
+    <div class="sb-grid">
+      <div class="sb-card ${blockWin ? "sb-win" : ""}">
+        <div class="sb-label">Billete único ida+vuelta ${blockWin ? '<span class="sb-badge">MEJOR</span>' : ""}</div>
+        <div class="sb-price">${fmtMoney(sb.block_base_usd)}</div>
+        <div class="sb-sub">${sb.block_airline} · 1 reserva, protección entre tramos</div>
+      </div>
+      <div class="sb-card ${splitWin ? "sb-win" : ""}">
+        <div class="sb-label">Tramos por separado ${splitWin ? '<span class="sb-badge">MEJOR</span>' : ""}</div>
+        <div class="sb-price">${fmtMoney(sb.split_total_usd)}</div>
+        <div class="sb-sub">ida ${fmtMoney(sb.split_out_usd)} + vuelta ${fmtMoney(sb.split_return_usd)} · 2 reservas</div>
+      </div>
+    </div>
+    <div class="sb-verdict">
+      ${splitWin
+        ? `Comprando por tramos ahorras <strong>${fmtMoney(sb.savings_usd)}</strong>. Vale la pena si viajas ligero (el equipaje se cobra 2 veces).`
+        : `El bloque único es <strong>${fmtMoney(sb.savings_usd)}</strong> más barato y además te protege si una aerolínea cancela. Cómpralo junto.`}
+    </div>`;
+}
+
 let LAST_SEARCH = null;  // remember last query payload for tracker
 
 function render(data, payload) {
@@ -663,6 +692,8 @@ function render(data, payload) {
     ${cheapest ? `<br>Más barato: <strong>${cheapest.airline}</strong> por <strong>${fmtMoney(cheapest.total_usd)}</strong> total.` : ""}
     ${rerunBadge}
   `;
+
+  renderSplitVsBlock(data.split_vs_block);
 
   const recEl = document.getElementById("recommendations");
   recEl.innerHTML = (data.recommendations || []).map(r =>
